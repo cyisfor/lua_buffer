@@ -5,13 +5,13 @@ This is for purely binary undecoded data, octet strings so to speak. All decodin
 
 something like this...
 
-local buffer = require("buffer")
-local io = require("iobufferderp")
-local mod = require("somebufferusingcmodule")
-local f = io:open({path="somedest",mode=io.WRITE})
-local buf = buffer:new(1024)
-while true do
-    mod:fill(buf)
-    f:write(buf)
-end
-f:close()
+    local buffer = require("buffer")
+    local io = require("iobufferderp")
+    local mod = require("somebufferusingcmodule")
+    local f = io:open({path="somedest",mode=io.WRITE})
+    local buf = buffer:new(1024)
+    while true do
+        mod:fill(buf)
+        f:write(buf)
+    end
+    f:close()
