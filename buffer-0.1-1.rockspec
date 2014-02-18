@@ -1,10 +1,11 @@
 package = "buffer"
 version = "0.1-1"
 source = {
-    url = "..."
+    url = "git@github.com:cyisfor/lua_buffer.git"
 }
 description = {
     summary = "Efficient binary buffer operations.",
+    homepage = "http://github.com/cyisfor/lua_buffer/",
     detailed = [[
 local buffer = require("buffer")
 local io = require("iobufferderp")
@@ -20,7 +21,8 @@ f:close()
 }
 
 dependencies = {
-    "lua ~> 5.1"
+    "lua ~> 5.1",
+    "fancyrequire"
 }
 
 build = {
