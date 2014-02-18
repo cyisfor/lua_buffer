@@ -4,13 +4,7 @@
 #include "lauxlib.h"
 #include "string.h"
 
-static buffer* buffer_new(lua_State* L) {
-    buffer* self = (buffer*) lua_newuserdata(L, sizeof(buffer));
-    self->alloc = lua_getallocf(L,&self->ud);
-    self->data = NULL;
-    self->length = self->offset = 0;
-    return self;
-}
+static buffer* buffer_new(lua_State* L);
 
 static void buffer_alloc(buffer* self, ssize_t amt) {
     // this may truncate data already in the buffer
@@ -31,9 +25,7 @@ static void buffer_empty(buffer* self) {
     self->length = self->offset = 0;
 }
 
-#include "lua.h"
-
-int l_buffer_new(lua_State* L) {
+static int l_buffer_new(lua_State* L) {
     int top = lua_gettop(L);
     buffer* self = buffer_new(L);
 
@@ -49,54 +41,69 @@ int l_buffer_new(lua_State* L) {
         }
     } 
 
-    luaL_getmetatable(L,"buffer");
-    lua_setmetatable(L,-2);
     return 1;
 }
 
-int l_buffer_concat(lua_State* L) {
-    buffer* old = lua_touserdata(L,1);
-    buffer* other = lua_touserdata(L,2);
+static buffer* get_self(lua_State* L, int pos) {
+    if(!lua_istable(L,pos)) return NULL;
+    lua_getfield(L,pos,"self");
+    return (buffer*) lua_touserdata(L,-1);
+}
+
+static int l_buffer_concat(lua_State* L) {
+    buffer* old = get_self(L,1);
+    buffer* other = get_self(L,2);
     buffer* self = buffer_new(L);
-    luaL_getmetatable(L,"buffer");
-    lua_setmetatable(L,-2);
     buffer_alloc(self,old->length + other->length);
     memcpy(self->data, old->data + old->offset, old->length);
     memcpy(self->data+old->length, other->data + other->offset, other->length);
     return 1;
 }
 
-int l_buffer_length(lua_State* L) {
-    buffer* self = lua_touserdata(L, 1);
+static int l_buffer_length(lua_State* L) {
+    buffer* self = get_self(L, 1);
     lua_pushinteger(L,self->length);
     return 1;
 }
 
-int l_buffer_equal(lua_State* L) {
-    buffer* self = lua_touserdata(L,1);
-    buffer* other = lua_touserdata(L,2);
-    lua_pushboolean(L,
-            (self == other || 
-             (self->data == NULL && other->data == NULL) ||
-             (self->length == other->length && 
-                0 == memcmp(self->data+self->offset,
-                    other->data+other->offset,
-                    self->length))) ?
-            1 :
-            0);
+static int l_buffer_equal(lua_State* L) {
+    int top = lua_gettop(L);
+    buffer* self = get_self(L,1);
+    buffer* other = get_self(L,2);
+    if(other) {
+        lua_pushboolean(L,
+                (self == other || 
+                 (self->data == NULL && other->data == NULL) ||
+                 (self->length == other->length && 
+                    0 == memcmp(self->data+self->offset,
+                        other->data+other->offset,
+                        self->length))) ?
+                1 :
+                0);
+    } else {
+        size_t len = 0;
+        const char* s = lua_tolstring(L,2,&len);
+        lua_pushboolean(L,
+                ((s == NULL && self->data == NULL) ||
+                 (self->length == len &&
+                     0 == memcmp(self->data+self->offset,s,len))) ?
+                1 :
+                0);
+    }
+        
     return 1;
 }
 
-int l_buffer_tostring(lua_State* L) {
-    buffer* self = lua_touserdata(L,1);
+static int l_buffer_tostring(lua_State* L) {
+    buffer* self = get_self(L,1);
     lua_pushlstring(L,self->data+self->offset,self->length);
     return 1;
 }
 
 
-int l_buffer_slice(lua_State* L) {
+static int l_buffer_slice(lua_State* L) {
     // this doesn't copy the data, so changing the slice changes the original buffer's contents!
-    buffer* self = lua_touserdata(L, 1);
+    buffer* self = get_self(L, 1);
     lua_Integer lower = lua_tointeger(L, 2);
     lua_Integer upper = lua_tointeger(L, 3);
     buffer* slice = buffer_new(L);
@@ -106,17 +113,17 @@ int l_buffer_slice(lua_State* L) {
     return 1;
 }
 
-int l_buffer_zero(lua_State* L) {
-    buffer* self = lua_touserdata(L,1);
+static int l_buffer_zero(lua_State* L) {
+    buffer* self = get_self(L,1);
     memset(self->data+self->offset, 0, self->length);
     return 0;
 }
 
-int l_buffer_set(lua_State* L) {
-    buffer* self = lua_touserdata(L,1);
+static int l_buffer_set(lua_State* L) {
+    buffer* self = get_self(L,1);
     buffer_empty(self);
-    if(lua_isuserdata(L, 2)) {
-        buffer* other = lua_touserdata(L, 2);
+    buffer* other = get_self(L, 2);
+    if(other) {
         self->data = other->data;
         self->length = other->length;
         self->offset = other->offset;
@@ -130,25 +137,64 @@ int l_buffer_set(lua_State* L) {
     return 0;
 }
 
-int l_buffer_clear(lua_State* L) {
-    buffer* self = lua_touserdata(L,1);
+static int l_buffer_clear(lua_State* L) {
+    buffer* self = get_self(L,1);
     buffer_empty(self);
     return 0;
 }
 
-int l_buffer_clone(lua_State* L) {
-    buffer* self = lua_touserdata(L,1);
+static int l_buffer_clone(lua_State* L) {
+    buffer* self = get_self(L,1);
     buffer* newer = buffer_new(L);
     buffer_set(newer,self->data+self->offset,self->length);
     return 1;
 }
 
-int l_buffer_consolidate(lua_State* L) {
-    buffer* self = lua_touserdata(L,1);
+static int l_buffer_consolidate(lua_State* L) {
+    buffer* self = get_self(L,1);
     memmove(self->data, self->data + self->offset, self->length);
     buffer_alloc(self,self->length);
     return 0;
 }
+
+static buffer* buffer_new(lua_State* L) {
+    buffer* self = (buffer*) lua_newuserdata(L, sizeof(buffer));
+    self->alloc = lua_getallocf(L,&self->ud);
+    self->data = NULL;
+    self->length = self->offset = 0;
+
+    // add methods etc to buffer userdata
+    lua_createtable(L,0, 6);
+    lua_pushliteral(L,"self");
+    lua_pushvalue(L,-3);
+    if(!lua_isuserdata(L,-1))
+        luaL_error(L,"Where'd the buffer go??");
+    lua_rawset(L,-3);
+
+    lua_pushliteral(L,"slice");
+    lua_pushcfunction(L,l_buffer_slice);
+    lua_rawset(L,-3);
+    lua_pushliteral(L,"zero");
+    lua_pushcfunction(L,l_buffer_zero);
+    lua_rawset(L,-3);
+    lua_pushliteral(L,"set");
+    lua_pushcfunction(L,l_buffer_set);
+    lua_rawset(L,-3);
+    lua_pushliteral(L,"clear");
+    lua_pushcfunction(L,l_buffer_clear);
+    lua_rawset(L,-3);
+    lua_pushliteral(L,"clone");
+    lua_pushcfunction(L,l_buffer_clone);
+    lua_rawset(L,-3);
+    lua_pushliteral(L,"consolidate");
+    lua_pushcfunction(L,l_buffer_consolidate);
+    lua_rawset(L,-3);
+    
+    luaL_getmetatable(L,"buffer");
+    lua_setmetatable(L,-2);
+    return self;
+}
+
     
 int luaopen_buffer(lua_State* L) {    
     if (luaL_newmetatable(L,"buffer") != 0) {
@@ -169,24 +215,6 @@ int luaopen_buffer(lua_State* L) {
         lua_settable(L,-3);
         lua_pushliteral(L,"__gc");
         lua_pushcfunction(L,l_buffer_clear);
-        lua_settable(L,-3);
-        lua_pushliteral(L,"slice");
-        lua_pushcfunction(L,l_buffer_slice);
-        lua_settable(L,-3);
-        lua_pushliteral(L,"zero");
-        lua_pushcfunction(L,l_buffer_zero);
-        lua_settable(L,-3);
-        lua_pushliteral(L,"set");
-        lua_pushcfunction(L,l_buffer_set);
-        lua_settable(L,-3);
-        lua_pushliteral(L,"clear");
-        lua_pushcfunction(L,l_buffer_clear);
-        lua_settable(L,-3);
-        lua_pushliteral(L,"clone");
-        lua_pushcfunction(L,l_buffer_clone);
-        lua_settable(L,-3);
-        lua_pushliteral(L,"consolidate");
-        lua_pushcfunction(L,l_buffer_consolidate);
         lua_settable(L,-3);
         lua_pop(L,1);
     }

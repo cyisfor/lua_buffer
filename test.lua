@@ -1,23 +1,28 @@
-local oldtostring = tostring
-function argh(o)
-    if type(o) == 'userdata' then
-        local meta = getmetatable(o)
-        if meta then
-            local ts = meta.__tostring
-            if ts then
-                return ts(o)
-            end
-        end
-    end
-    return oldtostring(o)
-end
-tostring = argh
+require('luarocks.loader')
 
-local buffer = require('buffer');
-local a = buffer("this is a");
-print(type(a))
-local b = buffer(" test.");
-print(a)
-local c = a..b
-print('concat',tostring(c))
-print(c == buffer("this is a test."))
+local downloadRequire = require('fancyrequire.download')
+local compileRequire = require('fancyrequire.compile')
+local withTests = downloadRequire('minitest')
+local assert = downloadRequire('luassert')
+
+withTests(function(c) 
+    c:describe("buffers",function(c)
+        local buffer = compileRequire('buffer')
+        c:it("create",function(c)
+            assert.userdata(buffer("this is a test").self)
+        end)
+        c:it("equal",function(c)
+            assert.equals(buffer("this is a test"),buffer("this is a test"))
+        end)
+        c:it("set",function(c)
+            local b = buffer("this is a test")
+            b:set("this is a derp")
+            assert.equals(b,buffer("this is a derp"))
+        end)
+        c:it("concatenate",function(c)
+            local a = buffer("this is ")
+            local b = buffer("a test")
+            assert.equals(a..b,buffer("this is a test"))
+        end)
+    end)
+end)
