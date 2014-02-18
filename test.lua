@@ -14,10 +14,10 @@ end
 tostring = argh
 
 local buffer = require('buffer');
-local a = buffer:new("this is a");
+local a = buffer("this is a");
 print(type(a))
-local b = buffer:new(" test.");
+local b = buffer(" test.");
 print(a)
 local c = a..b
 print('concat',tostring(c))
-print(a..b == buffer:new("this is a test."))
+print(c == buffer("this is a test."))
