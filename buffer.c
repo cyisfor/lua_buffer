@@ -4,23 +4,29 @@
 #include "lauxlib.h"
 #include "string.h"
 
-static buffer* buffer_new(lua_State* L);
+buffer* buffer_new(lua_State* L);
 
-static void buffer_alloc(buffer* self, ssize_t amt) {
+void buffer_alloc(buffer* self, ssize_t amt) {
     // this may truncate data already in the buffer
     self->data = self->alloc(self->ud,self->data,self->length,amt);
     self->length = amt;
     self->offset = 0;
 }
 
-static void buffer_set(buffer* self, unsigned const char* s,size_t len) {
+void buffer_reset(buffer* self) {
+    // prepare for writing, discard any offsets
+    self->length += self->offset;
+    self->offset = 0;
+}
+
+void buffer_set(buffer* self, unsigned const char* s,size_t len) {
     self->data = self->alloc(self->ud,self->data,self->length + self->offset,len);
     memcpy(self->data,s,len);
     self->length = len;
     self->offset = 0;
 }
 
-static void buffer_empty(buffer* self) {
+void buffer_empty(buffer* self) {
     self->data = self->alloc(self->ud,self->data,self->length + self->offset,0);
     self->length = self->offset = 0;
 }
@@ -44,15 +50,15 @@ static int l_buffer_new(lua_State* L) {
     return 1;
 }
 
-static buffer* get_self(lua_State* L, int pos) {
+buffer* buffer_get(lua_State* L, int pos) {
     if(!lua_istable(L,pos)) return NULL;
     lua_getfield(L,pos,"self");
     return (buffer*) lua_touserdata(L,-1);
 }
 
 static int l_buffer_concat(lua_State* L) {
-    buffer* old = get_self(L,1);
-    buffer* other = get_self(L,2);
+    buffer* old = buffer_get(L,1);
+    buffer* other = buffer_get(L,2);
     buffer* self = buffer_new(L);
     buffer_alloc(self,old->length + other->length);
     memcpy(self->data, old->data + old->offset, old->length);
@@ -61,15 +67,15 @@ static int l_buffer_concat(lua_State* L) {
 }
 
 static int l_buffer_length(lua_State* L) {
-    buffer* self = get_self(L, 1);
+    buffer* self = buffer_get(L, 1);
     lua_pushinteger(L,self->length);
     return 1;
 }
 
 static int l_buffer_equal(lua_State* L) {
     int top = lua_gettop(L);
-    buffer* self = get_self(L,1);
-    buffer* other = get_self(L,2);
+    buffer* self = buffer_get(L,1);
+    buffer* other = buffer_get(L,2);
     if(other) {
         lua_pushboolean(L,
                 (self == other || 
@@ -94,16 +100,21 @@ static int l_buffer_equal(lua_State* L) {
     return 1;
 }
 
+static int l_buffer_display(lua_State* L) {
+    buffer* self = buffer_get(L,1);
+    lua_pushfstring(L,"<buffer %p:%d:%d>",self,self->offset,self->length);
+    return 1;
+}
+
 static int l_buffer_tostring(lua_State* L) {
-    buffer* self = get_self(L,1);
+    buffer* self = buffer_get(L,1);
     lua_pushlstring(L,self->data+self->offset,self->length);
     return 1;
 }
 
-
 static int l_buffer_slice(lua_State* L) {
     // this doesn't copy the data, so changing the slice changes the original buffer's contents!
-    buffer* self = get_self(L, 1);
+    buffer* self = buffer_get(L, 1);
     lua_Integer lower = lua_tointeger(L, 2);
     lua_Integer upper = lua_tointeger(L, 3);
     buffer* slice = buffer_new(L);
@@ -114,15 +125,15 @@ static int l_buffer_slice(lua_State* L) {
 }
 
 static int l_buffer_zero(lua_State* L) {
-    buffer* self = get_self(L,1);
+    buffer* self = buffer_get(L,1);
     memset(self->data+self->offset, 0, self->length);
     return 0;
 }
 
 static int l_buffer_set(lua_State* L) {
-    buffer* self = get_self(L,1);
+    buffer* self = buffer_get(L,1);
     buffer_empty(self);
-    buffer* other = get_self(L, 2);
+    buffer* other = buffer_get(L, 2);
     if(other) {
         self->data = other->data;
         self->length = other->length;
@@ -138,26 +149,26 @@ static int l_buffer_set(lua_State* L) {
 }
 
 static int l_buffer_clear(lua_State* L) {
-    buffer* self = get_self(L,1);
+    buffer* self = buffer_get(L,1);
     buffer_empty(self);
     return 0;
 }
 
 static int l_buffer_clone(lua_State* L) {
-    buffer* self = get_self(L,1);
+    buffer* self = buffer_get(L,1);
     buffer* newer = buffer_new(L);
     buffer_set(newer,self->data+self->offset,self->length);
     return 1;
 }
 
 static int l_buffer_consolidate(lua_State* L) {
-    buffer* self = get_self(L,1);
+    buffer* self = buffer_get(L,1);
     memmove(self->data, self->data + self->offset, self->length);
     buffer_alloc(self,self->length);
     return 0;
 }
 
-static buffer* buffer_new(lua_State* L) {
+buffer* buffer_new(lua_State* L) {
     buffer* self = (buffer*) lua_newuserdata(L, sizeof(buffer));
     self->alloc = lua_getallocf(L,&self->ud);
     self->data = NULL;
@@ -189,6 +200,9 @@ static buffer* buffer_new(lua_State* L) {
     lua_pushliteral(L,"consolidate");
     lua_pushcfunction(L,l_buffer_consolidate);
     lua_rawset(L,-3);
+    lua_pushliteral(L,"string");
+    lua_pushcfunction(L,l_buffer_tostring);
+    lua_rawset(L,-3);
     
     luaL_getmetatable(L,"buffer");
     lua_setmetatable(L,-2);
@@ -208,7 +222,7 @@ int luaopen_buffer(lua_State* L) {
         lua_pushcfunction(L,l_buffer_equal);
         lua_settable(L,-3);
         lua_pushliteral(L,"__tostring");
-        lua_pushcfunction(L,l_buffer_tostring);
+        lua_pushcfunction(L,l_buffer_display);
         lua_settable(L,-3);
         lua_pushliteral(L,"__tostring");
         lua_pushcfunction(L,l_buffer_tostring);
