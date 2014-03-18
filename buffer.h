@@ -10,6 +10,7 @@ typedef struct {
     uint8_t* data;
     ssize_t length;
     ssize_t offset;
+    uint8_t isSlice;
 } buffer;
 
 

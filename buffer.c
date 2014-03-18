@@ -27,7 +27,12 @@ void buffer_set(buffer* self, unsigned const char* s,size_t len) {
 }
 
 void buffer_empty(buffer* self) {
-    self->data = self->alloc(self->ud,self->data,self->length + self->offset,0);
+    if(self->isSlice == 1) {
+        self->data = NULL;
+        self->isSlice = 0;
+    } else {
+        self->data = self->alloc(self->ud,self->data,self->length + self->offset,0);
+    }
     self->length = self->offset = 0;
 }
 
@@ -114,10 +119,27 @@ static int l_buffer_tostring(lua_State* L) {
 
 static int l_buffer_slice(lua_State* L) {
     // this doesn't copy the data, so changing the slice changes the original buffer's contents!
+    // slice(lower bound, upper bound)
+    
+    if(lua_isnil(L,2) && lua_isnil(L,3)) {
+        lua_pushvalue(L,1);
+        return 1;
+    }
+
     buffer* self = buffer_get(L, 1);
-    lua_Integer lower = lua_tointeger(L, 2);
-    lua_Integer upper = lua_tointeger(L, 3);
+    lua_Integer lower, upper;
+    if (lua_isnil(L,2)) {
+        lower = self->offset;
+    } else {
+        lower = lua_tointeger(L, 2) + self->offset;
+    }
+    if(lua_isnil(L,3)) {
+        upper = self->length + self->offset;
+    } else {
+        upper = lua_tointeger(L, 3);
+    }
     buffer* slice = buffer_new(L);
+    slice->isSlice = 1;
     slice->data = self->data;
     slice->offset = lower;
     slice->length = upper - lower;
@@ -135,9 +157,11 @@ static int l_buffer_set(lua_State* L) {
     buffer_empty(self);
     buffer* other = buffer_get(L, 2);
     if(other) {
+        // this is about as shallow as assignment can get.
         self->data = other->data;
         self->length = other->length;
         self->offset = other->offset;
+        self->isSlice = 1;
     } else if(lua_isstring(L, 2)) {
         size_t len = 0;
         unsigned const char* s = lua_tolstring(L, 2, &len);
@@ -162,17 +186,29 @@ static int l_buffer_clone(lua_State* L) {
 }
 
 static int l_buffer_consolidate(lua_State* L) {
+    // aka chop out a piece then throw the rest away
+    // any slices to this buffer, including the original, may become kaput
+    // buf = buf:slice(5,10):consolidate()
+    // slightly more efficient than
+    // buf = buf:slice(5,10):clone()
     buffer* self = buffer_get(L,1);
-    memmove(self->data, self->data + self->offset, self->length);
-    buffer_alloc(self,self->length);
-    return 0;
+    lua_pushvalue(L,1);
+    if(self->isSlice) {
+        memmove(self->data, self->data + self->offset, self->length);
+        buffer_alloc(self,self->length);
+        self->isSlice = 0;
+    }
+    return 1;
 }
 
 buffer* buffer_new(lua_State* L) {
+    // note this pushes the buffer onto the stack, so returning 1 after calling this
+    // will return the buffer it produces.
     buffer* self = (buffer*) lua_newuserdata(L, sizeof(buffer));
     self->alloc = lua_getallocf(L,&self->ud);
     self->data = NULL;
     self->length = self->offset = 0;
+    self->isSlice = 0;
 
     // add methods etc to buffer userdata
     lua_createtable(L,0, 6);
@@ -223,9 +259,6 @@ int luaopen_buffer(lua_State* L) {
         lua_settable(L,-3);
         lua_pushliteral(L,"__tostring");
         lua_pushcfunction(L,l_buffer_display);
-        lua_settable(L,-3);
-        lua_pushliteral(L,"__tostring");
-        lua_pushcfunction(L,l_buffer_tostring);
         lua_settable(L,-3);
         lua_pushliteral(L,"__gc");
         lua_pushcfunction(L,l_buffer_clear);

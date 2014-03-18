@@ -34,5 +34,19 @@ withTests(function(c)
             local a = buffer("this is a test")
             assert.same("this is a test", a:string())
         end)
+        c:it("clone", function(c)
+            local a = buffer("this is a test");
+            local b = a:clone();
+            a:set("that was a test");
+            assert.same("that was a test", a:string())
+            assert.same("this is a test", b:string())
+        end)
+        c:it("consolidate", function(c)
+            local buf = buffer("prefix infix suffix");
+            buf = buf:slice(7,12);
+            assert.same("infix",buf:string())
+            buf = buf:consolidate()
+            assert.same("infix",buf:string())
+        end)
     end)
 end)
