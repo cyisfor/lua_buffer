@@ -8,9 +8,9 @@ buffer* buffer_new(lua_State* L);
 
 void buffer_alloc(buffer* self, ssize_t amt) {
     // this may truncate data already in the buffer
-    self->data = self->alloc(self->ud,self->data,self->length,amt);
+    self->data = self->alloc(self->ud,self->data,self->length+self->offset,amt+self->offset);
+    self->isConst = 0;
     self->length = amt;
-    self->offset = 0;
 }
 
 void buffer_reset(buffer* self) {
@@ -21,18 +21,28 @@ void buffer_reset(buffer* self) {
 
 void buffer_set(buffer* self, unsigned const char* s,size_t len) {
     self->data = self->alloc(self->ud,self->data,self->length + self->offset,len);
+    self->isConst = 0;
     memcpy(self->data,s,len);
+    self->length = len;
+    self->offset = 0;
+}
+
+void buffer_wrap(buffer* self, uint8_t* s,size_t len) {
+    // this is about as shallow as you can get!
+    self->isSlice = 1;
+    self->data = s;
     self->length = len;
     self->offset = 0;
 }
 
 void buffer_empty(buffer* self) {
     if(self->isSlice == 1) {
-        self->data = NULL;
         self->isSlice = 0;
     } else {
-        self->data = self->alloc(self->ud,self->data,self->length + self->offset,0);
+        self->alloc(self->ud,self->data,self->length + self->offset,0);
     }
+    self->data = NULL;
+    self->isConst = 1;
     self->length = self->offset = 0;
 }
 
@@ -59,6 +69,15 @@ buffer* buffer_get(lua_State* L, int pos) {
     if(!lua_istable(L,pos)) return NULL;
     lua_getfield(L,pos,"self");
     return (buffer*) lua_touserdata(L,-1);
+}
+
+buffer* buffer_slice(lua_State* L, buffer* self, int lower, int upper) {
+    buffer* slice = buffer_new(L);
+    slice->isSlice = 1;
+    slice->data = self->data;
+    slice->offset = lower;
+    slice->length = upper - lower;
+    return slice;
 }
 
 static int l_buffer_concat(lua_State* L) {
@@ -138,11 +157,8 @@ static int l_buffer_slice(lua_State* L) {
     } else {
         upper = lua_tointeger(L, 3);
     }
-    buffer* slice = buffer_new(L);
-    slice->isSlice = 1;
-    slice->data = self->data;
-    slice->offset = lower;
-    slice->length = upper - lower;
+    buffer_slice(L,self,lower,upper);
+
     return 1;
 }
 
@@ -162,6 +178,7 @@ static int l_buffer_set(lua_State* L) {
         self->length = other->length;
         self->offset = other->offset;
         self->isSlice = 1;
+        self->isConst = other->isConst;
     } else if(lua_isstring(L, 2)) {
         size_t len = 0;
         unsigned const char* s = lua_tolstring(L, 2, &len);
@@ -209,6 +226,7 @@ buffer* buffer_new(lua_State* L) {
     self->data = NULL;
     self->length = self->offset = 0;
     self->isSlice = 0;
+    self->isConst = 1;
 
     // add methods etc to buffer userdata
     lua_createtable(L,0, 6);
