@@ -52,6 +52,30 @@ buffer* buffer_get(lua_State* L, int pos) {
     return (buffer*) lua_touserdata(L,-1);
 }
 
+void buffer_getsliced(lua_State* L, int pos, derpslice* result) {
+    // should leave the buffer, or slice, on top of the stack
+    // XXX: what this returns isn't a REAL buffer... how to differentiate?
+    buffer* self = NULL;
+    if(lua_objlen(L,pos)==3) {
+        lua_rawgeti(L,pos,1);
+        self = buffer_get(L,-1);
+        result->isConst = self->isConst;
+        lua_pop(L,1);
+        lua_rawgeti(L,pos,2);
+        result->data = self->data + lua_checkinteger(L,-1);
+        lua_pop(L,1);
+        lua_rawgeti(L,pos,3);
+        result->length = lua_checkinteger(L,-1);
+        lua_pop(L,1);
+    } else {
+        self = buffer_get(L,-1);
+        result->isConst = self->isConst
+        result->data = self->data;
+        result->length = self->size;
+    }
+}
+
+
 /* idea: defer the slice operation.
  * buffer "slices" are {buffer,offset,amount}
  * when printing, make a dest buffer of amount, then copy, then print
@@ -59,14 +83,49 @@ buffer* buffer_get(lua_State* L, int pos) {
  * buf:slice(a,b) just returns {buffer,offset,amount}
  */
 
-void buffer_slice(buffer* dest, lua_Integer dest_offset, buffer* src, lua_Integer src_offset, lua_Integer amount) {
-    src_offset = MIN(src_offset,src->size-1);
-    dest_offset = MIN(dest_offset,dest->size-1);
-    amount = MIN(amount,dest->size-dest_offset);
-    amount = MIN(amount,src->size-src_offset);
-    memcpy(dest->data+dest_offset,src->data+src_offset,amount);
+void buffer_actually_slice(buffer* dest, lua_Integer dest_offset, buffer* src, lua_Integer src_offset, lua_Integer amount) {
+    luaL_error(L,"We really ever use this?");
 }
 
+static void buffer_init(buffer* self, lua_State* L) {
+    // add methods etc to buffer userdata
+    lua_createtable(L, 0, 6);
+    lua_pushliteral(L,"self");
+    lua_pushvalue(L,-3);
+    if(!lua_isuserdata(L,-1))
+        luaL_error(L,"Where'd the buffer go??");
+    lua_rawset(L,-3);
+
+    lua_pushliteral(L,"size");
+    lua_pushinteger(L,self->size);
+    lua_rawset(L,-3);
+
+#define FUNC(a) { lua_pushliteral(L,#a); lua_pushcfunction(L, l_buffer_ ## a); lua_rawset(L,-3); }
+    FUNC(new);
+    FUNC(equals);
+    FUNC(fill);
+    FUNC(display);
+    FUNC(tostring);
+    FUNC(actually_slice);
+    FUNC(zero);
+    FUNC(clone);
+#undef FUNC
+    luaL_getmetatable(L,"buffer");
+    lua_setmetatable(L,-2);
+}
+
+void buffer_pushslice(lua_State* L, lua_Integer offset, lua_Integer amount) {
+    // takes <buffer> or -> and replaces with {<buffer>,offset,amount}
+    if(!lua_objlen(L,-1)==3) {
+        lua_createtable(L,3,0);
+        lua_insert(L, -2);
+        lua_rawseti(L, -2, 1);
+    }
+    lua_pushinteger(L, offset);
+    lua_rawseti(L, -2, 2);
+    lua_pushinteger(L, amount);
+    lua_rawseti(L, -2, 3);
+}
 
 static int l_buffer_new(lua_State* L) {
     int top = lua_gettop(L);
@@ -166,7 +225,12 @@ static int l_buffer_actually_slice(lua_State* L) {
     buffer* src = buffer_get(L, 3);
     lua_Integer src_offset = luaL_checkinteger(L, 4);
 
-    buffer_slice(dest,dest_offset,src,src_offset,amount);
+    src_offset = MIN(src_offset,src->size-1);
+    dest_offset = MIN(dest_offset,dest->size-1);
+    amount = MIN(amount,dest->size-dest_offset);
+    amount = MIN(amount,src->size-src_offset);
+    memcpy(dest->data+dest_offset,src->data+src_offset,amount);
+
     lua_pushvalue(L, 1);
     return 1;
 } 
@@ -245,31 +309,8 @@ buffer* buffer_new(lua_State* L, lua_Integer amt) {
 
     luaL_getmetatable(L,"buffer");
     lua_setmetatable(L,-2);
-    // add methods etc to buffer userdata
-    lua_createtable(L, 0, 6);
-    lua_pushliteral(L,"self");
-    lua_pushvalue(L,-3);
-    if(!lua_isuserdata(L,-1))
-        luaL_error(L,"Where'd the buffer go??");
-    lua_rawset(L,-3);
 
-    lua_pushliteral(L,"size");
-    lua_pushinteger(L,self->size);
-    lua_rawset(L,-3);
-
-#define FUNC(a) { lua_pushliteral(L,#a); lua_pushcfunction(L, l_buffer_ ## a); lua_rawset(L,-3); }
-    FUNC(new);
-    FUNC(equals);
-    FUNC(fill);
-    FUNC(display);
-    FUNC(tostring);
-    FUNC(actually_slice);
-    FUNC(zero);
-    FUNC(clone);
-#undef FUNC
-    luaL_getmetatable(L,"buffer");
-    lua_setmetatable(L,-2);
-    return self;
+    buffer_init(L,self);
 }
 
     
