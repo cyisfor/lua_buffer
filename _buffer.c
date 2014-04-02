@@ -8,7 +8,7 @@
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
-void buffer_set(buffer* self, size_t offset, unsigned const char* s, size_t len) {
+void buffer_set0(buffer* self, size_t offset, unsigned const char* s, size_t len) {
     assert(self->isConst != 1);
     assert(len+offset <= self->size);
     len = MIN(self->size-offset,len);
@@ -65,13 +65,13 @@ void buffer_getsliced(lua_State* L, int pos, derpslice* result) {
         result->data = self->data + lua_checkinteger(L,-1);
         lua_pop(L,1);
         lua_rawgeti(L,pos,3);
-        result->length = lua_checkinteger(L,-1);
+        result->size = lua_checkinteger(L,-1);
         lua_pop(L,1);
     } else {
         self = buffer_get(L,-1);
-        result->isConst = self->isConst
+        result->isConst = self->isConst;
         result->data = self->data;
-        result->length = self->size;
+        result->size = self->size;
     }
 }
 
@@ -84,34 +84,8 @@ void buffer_getsliced(lua_State* L, int pos, derpslice* result) {
  */
 
 void buffer_actually_slice(buffer* dest, lua_Integer dest_offset, buffer* src, lua_Integer src_offset, lua_Integer amount) {
-    luaL_error(L,"We really ever use this?");
-}
-
-static void buffer_init(buffer* self, lua_State* L) {
-    // add methods etc to buffer userdata
-    lua_createtable(L, 0, 6);
-    lua_pushliteral(L,"self");
-    lua_pushvalue(L,-3);
-    if(!lua_isuserdata(L,-1))
-        luaL_error(L,"Where'd the buffer go??");
-    lua_rawset(L,-3);
-
-    lua_pushliteral(L,"size");
-    lua_pushinteger(L,self->size);
-    lua_rawset(L,-3);
-
-#define FUNC(a) { lua_pushliteral(L,#a); lua_pushcfunction(L, l_buffer_ ## a); lua_rawset(L,-3); }
-    FUNC(new);
-    FUNC(equals);
-    FUNC(fill);
-    FUNC(display);
-    FUNC(tostring);
-    FUNC(actually_slice);
-    FUNC(zero);
-    FUNC(clone);
-#undef FUNC
-    luaL_getmetatable(L,"buffer");
-    lua_setmetatable(L,-2);
+    // We really ever use this?
+    assert(0);
 }
 
 void buffer_pushslice(lua_State* L, lua_Integer offset, lua_Integer amount) {
@@ -252,7 +226,7 @@ static int l_buffer_clone(lua_State* L) {
         amount = self->size;
     }
     buffer* newer = buffer_new(L,amount);
-    buffer_set(newer,0, self->data+offset,amount);
+    buffer_set0(newer,0, self->data+offset,amount);
     return 1;
 }
 
@@ -291,6 +265,33 @@ static int l_buffer_fill(lua_State* L) {
         memcpy(self->data+sof,s+oof,amount);
     }
     return 0;
+}
+
+static void buffer_init(lua_State* L, buffer* self) {
+    // add methods etc to buffer userdata
+    lua_createtable(L, 0, 6);
+    lua_pushliteral(L,"self");
+    lua_pushvalue(L,-3);
+    if(!lua_isuserdata(L,-1))
+        luaL_error(L,"Where'd the buffer go??");
+    lua_rawset(L,-3);
+
+    lua_pushliteral(L,"size");
+    lua_pushinteger(L,self->size);
+    lua_rawset(L,-3);
+
+#define FUNC(a) { lua_pushliteral(L,#a); lua_pushcfunction(L, l_buffer_ ## a); lua_rawset(L,-3); }
+    FUNC(new);
+    FUNC(equals);
+    FUNC(fill);
+    FUNC(display);
+    FUNC(tostring);
+    FUNC(actually_slice);
+    FUNC(zero);
+    FUNC(clone);
+#undef FUNC
+    luaL_getmetatable(L,"buffer");
+    lua_setmetatable(L,-2);
 }
 
 buffer* buffer_new(lua_State* L, lua_Integer amt) {

@@ -1,5 +1,5 @@
 package = "buffer"
-version = "0.1-1"
+version = "0.1-2"
 source = {
     url = "git@github.com:cyisfor/lua_buffer.git"
 }
@@ -28,7 +28,7 @@ dependencies = {
 build = {
     type = "builtin",
     modules = {
-        buffer = "buffer.c",
-        iobufferderp = "io.c"
+        _buffer = "_buffer.c",
+        buffer = "buffer.lua",
     }
 }
